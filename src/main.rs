@@ -1,6 +1,22 @@
+mod git;
+
 use clap::{Parser, Subcommand};
-use git2::{DiffFormat, Repository};
+use git2::{BranchType, Commit, Repository};
+use ratatui::{
+    backend::{Backend, CrosstermBackend},
+    layout::{Constraint, Direction, Layout},
+    style::{Color, Style},
+    terminal::{Frame, Terminal},
+    widgets::{Block, Borders, Paragraph},
+};
 use std::error::Error;
+
+use crossterm::event::{self, Event, KeyCode};
+use crossterm::{
+    execute,
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen},
+};
+use std::io::{self, Write};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -19,7 +35,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let cli = Cli::parse();
 
     match &cli.command {
-        Some(Commands::Show) => show_stash_entries()?,
+        Some(Commands::Show) => show_tree()?,
         None => {
             println!("Default subcommand");
         }
@@ -28,39 +44,125 @@ fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn show_stash_entries() -> Result<(), Box<dyn Error>> {
+fn show_tree() -> Result<(), Box<dyn Error>> {
+    // Initialize the terminal
+    let stdout = io::stdout();
+    execute!(io::stdout(), EnterAlternateScreen)?;
+
+    let backend = CrosstermBackend::new(stdout);
+    let mut terminal = Terminal::new(backend)?;
+
     let mut repo = Repository::open(".")?;
-    let mut stashes = Vec::new();
+    let branches = get_branches(&repo)?;
+    let stashes = git::stash::get_stashes(&mut repo)?;
 
-    repo.stash_foreach(|index, message, &id| {
-        stashes.push((index, message.to_string(), id));
-        true
-    })?;
+    // Main event loop
+    loop {
+        terminal.draw(|f| ui(f, &repo, &branches, &stashes))?;
 
-    for (index, message, id) in stashes {
-        println!("Stash {}: {}", index, message);
-        if let Err(e) = print_stash_diff(&repo, &id) {
-            eprintln!("Error printing diff for stash {}: {}", index, e);
+        if let Event::Key(key) = event::read()? {
+            if key.code == KeyCode::Char('q') {
+                break;
+            }
         }
     }
 
+    // Cleanup
+    execute!(io::stdout(), LeaveAlternateScreen)?;
+    terminal.show_cursor()?;
     Ok(())
 }
 
-fn print_stash_diff(repo: &Repository, stash_id: &git2::Oid) -> Result<(), Box<dyn Error>> {
-    let stash_commit = repo.find_commit(*stash_id)?;
-    let parent_commit = stash_commit.parent(0)?;
+fn get_branches(repo: &Repository) -> Result<Vec<String>, git2::Error> {
+    let mut branches = vec![];
+    let branch_iter = repo.branches(Some(BranchType::Local))?;
+    for branch in branch_iter {
+        let (branch, _) = branch?;
+        let name = branch.name()?.unwrap_or("").to_string();
+        branches.push(name);
+    }
+    Ok(branches)
+}
 
-    let diff = repo.diff_tree_to_tree(
-        Some(&parent_commit.tree()?),
-        Some(&stash_commit.tree()?),
-        None,
-    )?;
+fn ui(f: &mut Frame, repo: &Repository, branches: &[String], stashes: &Vec<git::stash::Stash>) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .margin(1)
+        .constraints([Constraint::Percentage(100)].as_ref())
+        .split(f.size());
 
-    diff.print(DiffFormat::Patch, |_delta, _hunk, line| {
-        print!("{}", String::from_utf8_lossy(line.content()));
-        true
-    })?;
+    let mut tree_text = String::new();
+    for branch in branches {
+        tree_text.push_str(&format!("Branch: {}\n", branch));
+        if let Ok(commit) = repo
+            .revparse_single(&format!("refs/heads/{}", branch))
+            .and_then(|obj| obj.peel_to_commit())
+        {
+            tree_text.push_str(&format_commit_tree(&commit, 0, repo));
+        }
+        tree_text.push_str("\n");
+    }
 
-    Ok(())
+    for stash in stashes {
+        tree_text.push_str(&format!("Stash: {} ({})\n", stash.index, stash.message));
+        if let Ok(commit) = repo.find_commit(stash.id) {
+            tree_text.push_str(&format_commit_tree(&commit, 0, repo));
+        }
+        tree_text.push_str("\n");
+    }
+
+    let paragraph = Paragraph::new(tree_text)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Git Branches and Stashes"),
+        )
+        .style(Style::default().fg(Color::White).bg(Color::Black));
+
+    f.render_widget(paragraph, chunks[0]);
+}
+
+fn format_commit_tree(commit: &Commit, level: usize, repo: &Repository) -> String {
+    let mut result = String::new();
+    for _ in 0..level {
+        result.push_str("  ");
+    }
+    let refs = format_refs(commit, repo);
+    result.push_str(&format!("* {} {}\n", commit.id(), refs));
+
+    for i in 0..commit.parent_count() {
+        if let Ok(parent) = commit.parent(i) {
+            result.push_str(&format_commit_tree(&parent, level + 1, repo));
+        }
+    }
+    result
+}
+
+fn format_refs(commit: &Commit, repo: &Repository) -> String {
+    let mut refs = String::new();
+    if let Ok(head) = repo.head() {
+        if head.target() == Some(commit.id()) {
+            refs.push_str("(HEAD");
+            if let Some(name) = head.shorthand() {
+                refs.push_str(&format!(", {}", name));
+            }
+            refs.push_str(") ");
+        }
+    }
+
+    if let Ok(branches) = repo.branches(Some(BranchType::Local)) {
+        for branch in branches {
+            if let Ok((branch, _)) = branch {
+                if let Ok(name) = branch.name() {
+                    if let Some(name) = name {
+                        if branch.get().target() == Some(commit.id()) {
+                            refs.push_str(&format!("({}) ", name));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    refs.trim_end().to_string()
 }
