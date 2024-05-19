@@ -1,4 +1,5 @@
-use git2::{Commit, DiffFormat,Repository};
+use std::cell::{Ref, RefMut};
+use git2::{Commit, DiffFormat, Repository};
 use std::error::Error;
 use std::time::SystemTime;
 
@@ -13,8 +14,25 @@ pub struct Stash<'repo> {
 }
 
 impl Stash<'_> {
+    #[allow(dead_code)]
     pub fn print_diff(&self, repo: &Repository) -> Result<(), Box<dyn Error>> {
-        print_stash_diff(repo, self)
+        let (stash_commit, base_commit) = (
+            &self.stash_commit,
+            &self.base_commit,
+        );
+
+        let diff = repo.diff_tree_to_tree(
+            Some(&base_commit.tree()?),
+            Some(&stash_commit.tree()?),
+            None,
+        )?;
+
+        diff.print(DiffFormat::Patch, |_delta, _hunk, line| {
+            print!("{}", String::from_utf8_lossy(line.content()));
+            true
+        })?;
+
+        Ok(())
     }
 }
 
@@ -24,7 +42,7 @@ impl std::fmt::Display for Stash<'_> {
     }
 }
 
-pub fn get_stashes(repo: &mut Repository) -> Result<Vec<Stash>, Box<dyn Error>> {
+pub fn get_stashes<'repo>(repo: &'repo mut RefMut<'repo, Repository>) -> Result<Vec<Stash<'repo>>, Box<dyn Error>> {
     let mut stashes = Vec::new();
 
     let stash_ids: Vec<(usize, String, git2::Oid)> = {
@@ -54,24 +72,4 @@ pub fn get_stashes(repo: &mut Repository) -> Result<Vec<Stash>, Box<dyn Error>> 
     }
 
     Ok(stashes)
-}
-
-fn print_stash_diff(repo: &Repository, stash: &Stash) -> Result<(), Box<dyn Error>> {
-    let (stash_commit, base_commit) = (
-        &stash.stash_commit,
-        &stash.base_commit,
-    );
-
-    let diff = repo.diff_tree_to_tree(
-        Some(&base_commit.tree()?),
-        Some(&stash_commit.tree()?),
-        None,
-    )?;
-
-    diff.print(DiffFormat::Patch, |_delta, _hunk, line| {
-        print!("{}", String::from_utf8_lossy(line.content()));
-        true
-    })?;
-
-    Ok(())
 }
