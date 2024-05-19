@@ -1,4 +1,4 @@
-use git2::{BranchType, Oid, Repository, Tree};
+use git2::{BranchType, Commit, Oid, Repository, Tree};
 use ratatui::{
     backend::Backend,
     layout::{Constraint, Direction, Layout},
@@ -6,6 +6,11 @@ use ratatui::{
     terminal::Frame,
     widgets::{Block, Borders, Paragraph},
 };
+
+pub struct Branch<'repo> {
+    pub name: String,
+    pub target: Commit<'repo>,
+}
 
 pub fn get_head_tree<'repo>(repo: &'repo Repository) -> Result<Tree<'repo>, git2::Error> {
     let head = repo.head()?;
@@ -27,13 +32,16 @@ fn format_tree(repo: &Repository, tree: &Tree, level: usize) -> String {
     result
 }
 
-pub fn get_branches(repo: &Repository) -> Result<Vec<String>, git2::Error> {
+pub fn get_branches(repo: &Repository) -> Result<Vec<Branch>, git2::Error> {
     let mut branches = vec![];
     let branch_iter = repo.branches(Some(BranchType::Local))?;
     for branch in branch_iter {
         let (branch, _) = branch?;
         let name = branch.name()?.unwrap_or("").to_string();
-        branches.push(name);
+        branches.push(Branch {
+            name,
+            target: branch.get().peel_to_commit()?,
+        });
     }
     Ok(branches)
 }

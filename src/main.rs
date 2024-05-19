@@ -34,12 +34,14 @@ enum Commands {
 fn main() -> Result<(), Box<dyn Error>> {
     let cli = Cli::parse();
 
-    match &cli.command {
-        Some(Commands::Show) => show_tree()?,
-        None => {
-            println!("Default subcommand");
-        }
-    }
+    git::print_result()?;
+
+    // match &cli.command {
+    //     Some(Commands::Show) => show_tree()?,
+    //     None => {
+    //         println!("Default subcommand");
+    //     }
+    // }
 
     Ok(())
 }
@@ -54,11 +56,12 @@ fn show_tree() -> Result<(), Box<dyn Error>> {
 
     let mut repo = Repository::open(".")?;
     let branches = get_branches(&repo)?;
+
     let stashes = git::stash::get_stashes(&mut repo)?;
 
     // Main event loop
     loop {
-        terminal.draw(|f| ui(f, &repo, &branches, &stashes))?;
+        terminal.draw(|f| ui(f, &branches, &stashes))?;
 
         if let Event::Key(key) = event::read()? {
             if key.code == KeyCode::Char('q') {
@@ -84,7 +87,7 @@ fn get_branches(repo: &Repository) -> Result<Vec<String>, git2::Error> {
     Ok(branches)
 }
 
-fn ui(f: &mut Frame, repo: &Repository, branches: &[String], stashes: &Vec<git::stash::Stash>) {
+fn ui(f: &mut Frame, branches: &[String], stashes: &Vec<git::stash::Stash>) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .margin(1)
@@ -94,20 +97,15 @@ fn ui(f: &mut Frame, repo: &Repository, branches: &[String], stashes: &Vec<git::
     let mut tree_text = String::new();
     for branch in branches {
         tree_text.push_str(&format!("Branch: {}\n", branch));
-        if let Ok(commit) = repo
-            .revparse_single(&format!("refs/heads/{}", branch))
-            .and_then(|obj| obj.peel_to_commit())
-        {
-            tree_text.push_str(&format_commit_tree(&commit, 0, repo));
-        }
+        // tree_text.push_str(&format_commit_tree(&commit, 0, repo));
         tree_text.push_str("\n");
     }
 
     for stash in stashes {
         tree_text.push_str(&format!("Stash: {} ({})\n", stash.index, stash.message));
-        if let Ok(commit) = repo.find_commit(stash.id) {
-            tree_text.push_str(&format_commit_tree(&commit, 0, repo));
-        }
+        // if let Ok(commit) = repo.find_commit(stash.id) {
+        //     tree_text.push_str(&format_commit_tree(&commit, 0, repo));
+        // }
         tree_text.push_str("\n");
     }
 
@@ -121,6 +119,44 @@ fn ui(f: &mut Frame, repo: &Repository, branches: &[String], stashes: &Vec<git::
 
     f.render_widget(paragraph, chunks[0]);
 }
+
+// fn ui(f: &mut Frame, repo: &Repository, branches: &[String], stashes: &Vec<git::stash::Stash>) {
+//     let chunks = Layout::default()
+//         .direction(Direction::Vertical)
+//         .margin(1)
+//         .constraints([Constraint::Percentage(100)].as_ref())
+//         .split(f.size());
+//
+//     let mut tree_text = String::new();
+//     for branch in branches {
+//         tree_text.push_str(&format!("Branch: {}\n", branch));
+//         if let Ok(commit) = repo
+//             .revparse_single(&format!("refs/heads/{}", branch))
+//             .and_then(|obj| obj.peel_to_commit())
+//         {
+//             tree_text.push_str(&format_commit_tree(&commit, 0, repo));
+//         }
+//         tree_text.push_str("\n");
+//     }
+//
+//     for stash in stashes {
+//         tree_text.push_str(&format!("Stash: {} ({})\n", stash.index, stash.message));
+//         if let Ok(commit) = repo.find_commit(stash.id) {
+//             tree_text.push_str(&format_commit_tree(&commit, 0, repo));
+//         }
+//         tree_text.push_str("\n");
+//     }
+//
+//     let paragraph = Paragraph::new(tree_text)
+//         .block(
+//             Block::default()
+//                 .borders(Borders::ALL)
+//                 .title("Git Branches and Stashes"),
+//         )
+//         .style(Style::default().fg(Color::White).bg(Color::Black));
+//
+//     f.render_widget(paragraph, chunks[0]);
+// }
 
 fn format_commit_tree(commit: &Commit, level: usize, repo: &Repository) -> String {
     let mut result = String::new();
