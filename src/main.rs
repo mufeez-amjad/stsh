@@ -1,8 +1,6 @@
 mod git;
 
-use std::cell::RefCell;
 use clap::{Parser, Subcommand};
-use git2::Repository;
 use ratatui::{
     backend::Backend,
 };
@@ -24,17 +22,22 @@ enum Commands {
 
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let _cli = Cli::parse();
+    let cli = Cli::parse();
 
-    let repo = RefCell::new(Repository::open(".")?);
-    git::get_stashes(&repo)?;
+    match &cli.command {
+        Some(Commands::Show) => {
+            let repo = git::repo::Repository::new(std::env::current_dir()?);
 
-    // match &cli.command {
-    //     Some(Commands::Show) => {}
-    //     None => {
-    //         println!("Default subcommand");
-    //     }
-    // }
+            let (branch, orphaned_stashes) = repo.get_stashes()?;
+            // print out
+            println!("{}", branch);
+            println!();
+            println!("Orphaned stashes: {:?}", orphaned_stashes);
+        }
+        None => {
+            println!("Default subcommand");
+        }
+    }
 
     Ok(())
 }

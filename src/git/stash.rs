@@ -1,24 +1,51 @@
-use std::cell::{Ref, RefMut};
-use git2::{Commit, DiffFormat, Repository};
+use git2::{DiffFormat};
 use std::error::Error;
 use std::time::SystemTime;
 
+use crate::git::repo::Repository;
+
 #[derive(Debug)]
-pub struct Stash<'repo> {
+pub struct Stash {
     pub index: usize,
     pub message: String,
     pub id: git2::Oid,
-    pub base_commit: Commit<'repo>,
-    pub stash_commit: Commit<'repo>,
-    pub timestamp: SystemTime,
 }
 
-impl Stash<'_> {
+pub struct Commit {
+    pub id: git2::Oid,
+}
+
+impl Stash {
+    pub fn base_commit(&self, repo: &Repository) -> Result<Commit, Box<dyn Error>> {
+        let repo = repo.0.borrow();
+
+        let stash_commit = repo.find_commit(self.id)?;
+        let base_commit = stash_commit.parent(0)?;
+
+        Ok(Commit {
+            id: base_commit.id(),
+        })
+    }
+
+    pub fn timestamp(&self, repo: &Repository) -> Result<SystemTime, Box<dyn Error>> {
+        let repo = repo.0.borrow();
+
+        let stash_commit = repo.find_commit(self.id)?;
+        let timestamp = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(stash_commit.time().seconds() as u64);
+
+        Ok(timestamp)
+    }
+
     #[allow(dead_code)]
     pub fn print_diff(&self, repo: &Repository) -> Result<(), Box<dyn Error>> {
+        let repo = repo.0.borrow();
+
+        let stash_commit = repo.find_commit(self.id)?;
+        let base_commit = stash_commit.parent(0)?;
+
         let (stash_commit, base_commit) = (
-            &self.stash_commit,
-            &self.base_commit,
+            &stash_commit,
+            &base_commit,
         );
 
         let diff = repo.diff_tree_to_tree(
@@ -34,42 +61,4 @@ impl Stash<'_> {
 
         Ok(())
     }
-}
-
-impl std::fmt::Display for Stash<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{}: {}", self.base_commit.tree_id(), self.message)
-    }
-}
-
-pub fn get_stashes<'repo>(repo: &'repo mut RefMut<'repo, Repository>) -> Result<Vec<Stash<'repo>>, Box<dyn Error>> {
-    let mut stashes = Vec::new();
-
-    let stash_ids: Vec<(usize, String, git2::Oid)> = {
-        let mut ids = Vec::new();
-        repo.stash_foreach(|index, message, &id| {
-            ids.push((index, message.to_string(), id));
-            true
-        })?;
-        ids
-    };
-
-    for (index, message, id) in stash_ids {
-        let stash_commit = repo.find_commit(id).expect("Could not retrieve stash object");
-        let base_commit = stash_commit.parent(0).expect("Could not retrieve stash commit");
-
-        let time = stash_commit.time();
-        let timestamp = SystemTime::UNIX_EPOCH + std::time::Duration::new(time.seconds() as u64, 0);
-
-        stashes.push(Stash {
-            index,
-            message,
-            id,
-            stash_commit,
-            base_commit,
-            timestamp
-        });
-    }
-
-    Ok(stashes)
 }
