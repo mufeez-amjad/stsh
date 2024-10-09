@@ -70,31 +70,41 @@ impl Repository {
                 .path()
                 .map(|p| p.to_string_lossy().to_string());
 
-            if let Some(diff_item) = current_diff.take() {
-                diffs.push(diff_item); // Push the previous diff item
-            }
+            if current_diff.is_none()
+                || current_diff.as_ref().unwrap().old_file != old_file
+                || current_diff.as_ref().unwrap().new_file != new_file
+            {
+                if let Some(diff_item) = current_diff.take() {
+                    diffs.push(diff_item); // Push the previous diff item
+                }
 
-            current_diff = Some(DiffItem {
-                old_file,
-                new_file,
-                hunks: Vec::new(),
-            });
+                current_diff = Some(DiffItem {
+                    old_file,
+                    new_file,
+                    hunks: Vec::new(),
+                });
+            }
 
             if let Some(hunk) = hunk {
                 // Hunk header - start a new hunk
-                if let Some(h) = current_hunk.take() {
-                    if let Some(ref mut diff_item) = current_diff {
-                        diff_item.hunks.push(h); // Push the previous hunk
+                if current_hunk.is_none()
+                    || current_hunk.as_ref().unwrap().old_start != hunk.old_start() as usize
+                    || current_hunk.as_ref().unwrap().new_start != hunk.new_start() as usize
+                {
+                    if let Some(h) = current_hunk.take() {
+                        if let Some(ref mut diff_item) = current_diff {
+                            diff_item.hunks.push(h); // Push the previous hunk
+                        }
                     }
-                }
 
-                current_hunk = Some(crate::git::diff::Hunk {
-                    old_start: hunk.old_start() as usize,
-                    old_lines: hunk.old_lines() as usize,
-                    new_start: hunk.new_start() as usize,
-                    new_lines: hunk.new_lines() as usize,
-                    lines: Vec::new(),
-                });
+                    current_hunk = Some(crate::git::diff::Hunk {
+                        old_start: hunk.old_start() as usize,
+                        old_lines: hunk.old_lines() as usize,
+                        new_start: hunk.new_start() as usize,
+                        new_lines: hunk.new_lines() as usize,
+                        lines: Vec::new(),
+                    });
+                }
             }
 
             // Line changes

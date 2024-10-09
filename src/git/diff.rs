@@ -29,10 +29,10 @@ pub struct LineChange {
 impl Display for DiffItem {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if let Some(old_file) = &self.old_file {
-            writeln!(f, "diff --git a/{}", old_file)?;
+            writeln!(f, "--- a/{}", old_file)?;
         }
         if let Some(new_file) = &self.new_file {
-            writeln!(f, "diff --git b/{}", new_file)?;
+            writeln!(f, "+++ b/{}", new_file)?;
         }
 
         for hunk in &self.hunks {
