@@ -1,9 +1,7 @@
 mod git;
 
 use clap::{Parser, Subcommand};
-use ratatui::{
-    backend::Backend,
-};
+use ratatui::backend::Backend;
 use std::error::Error;
 use std::io::Write;
 
@@ -20,7 +18,6 @@ enum Commands {
     Show,
 }
 
-
 fn main() -> Result<(), Box<dyn Error>> {
     let cli = Cli::parse();
 
@@ -28,11 +25,13 @@ fn main() -> Result<(), Box<dyn Error>> {
         Some(Commands::Show) => {
             let repo = git::repo::Repository::new(std::env::current_dir()?);
 
-            let (branch, orphaned_stashes) = repo.get_stashes()?;
-            // print out
-            println!("{}", branch);
-            println!();
-            println!("Orphaned stashes: {:?}", orphaned_stashes);
+            let stashes = repo.stashes()?;
+            for stash in stashes {
+                println!("{}", stash.message);
+                for diff in stash.diffs {
+                    println!("{}", diff);
+                }
+            }
         }
         None => {
             println!("Default subcommand");
