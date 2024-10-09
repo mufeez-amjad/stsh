@@ -61,6 +61,12 @@ impl Display for Hunk {
 
 impl Display for LineChange {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}{}", self.origin, self.content)
+        let color_code = match self.origin {
+            '-' => "\x1b[31m", // Red for deletions
+            '+' => "\x1b[32m", // Green for additions
+            ' ' => "\x1b[0m",  // Reset for context lines
+            _ => "\x1b[0m",    // Reset for any other cases
+        };
+        write!(f, "{}{}{}\x1b[0m", color_code, self.origin, self.content)
     }
 }

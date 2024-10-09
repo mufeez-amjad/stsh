@@ -114,13 +114,17 @@ impl Repository {
                 content: line_str,
             };
 
-            if let Some(ref mut hunk) = current_hunk {
-                hunk.lines.push(line_change);
+            match line.origin() {
+                '-' | '+' | ' ' => {
+                    if let Some(ref mut hunk) = current_hunk {
+                        hunk.lines.push(line_change); // Push only real line changes
+                    }
+                },
+                _ => {} // Ignore lines that are not part of the diff (e.g., hunk headers)
             }
 
             true
         })?;
-
         // Push any remaining diff and hunk
         if let Some(hunk) = current_hunk {
             if let Some(ref mut diff_item) = current_diff {
