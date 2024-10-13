@@ -119,7 +119,7 @@ impl Repository {
                     if let Some(ref mut hunk) = current_hunk {
                         hunk.lines.push(line_change); // Push only real line changes
                     }
-                },
+                }
                 _ => {} // Ignore lines that are not part of the diff (e.g., hunk headers)
             }
 

@@ -8,9 +8,14 @@ edition = "2021"
 [dependencies]
 git2 = "0.18.3"
 clap = { version = "4.5.4", features = ["derive"] }
-ratatui = "0.26.2"
-crossterm = "0.27.0"
-tempdir = "0.3.7"
+ratatui = { version = "0.26.2", features = ["crossterm"] }
 anyhow = "1.0.89"
 colored = "2.1.0"
+color-eyre = "0.6.3"
+crossterm = { version = "0.28.1", features = ["event-stream"] }
+tokio = { version = "1.40.0", features = ["macros", "rt", "sync", "time", "rt-multi-thread"] }
+futures = "0.3.31"
+tokio-util = "0.7.12"
+signal-hook = "0.3.17"
+signal-hook-tokio = "0.3.1"
 
