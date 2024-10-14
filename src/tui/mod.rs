@@ -337,4 +337,3 @@ impl EventHandler {
         key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL)
     }
 }
-

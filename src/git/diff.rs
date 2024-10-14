@@ -1,29 +1,35 @@
-use crate::git::stash::Stash;
 use std::fmt::Display;
-use std::path::Path;
 
-pub struct Diff {
-    items: Vec<DiffItem>,
-    stash: Stash,
-}
-
+/// A single diff item, which can contain multiple hunks
 pub struct DiffItem {
-    pub old_file: Option<String>, // Path to the old file (for "a/filename")
-    pub new_file: Option<String>, // Path to the new file (for "b/filename")
-    pub hunks: Vec<Hunk>,         // List of hunks with changes
+    /// Path to the old file (for "a/filename")
+    pub old_file: Option<String>,
+    /// Path to the new file (for "b/filename")
+    pub new_file: Option<String>,
+    /// List of hunks with changes
+    pub hunks: Vec<Hunk>,
 }
 
+/// A single hunk in a diff, which can contain multiple line changes
 pub struct Hunk {
-    pub old_start: usize,       // Start line in the old file
-    pub old_lines: usize,       // Number of lines in the old file
-    pub new_start: usize,       // Start line in the new file
-    pub new_lines: usize,       // Number of lines in the new file
-    pub lines: Vec<LineChange>, // List of changes in the hunk
+    /// Start line in the old file
+    pub old_start: usize,
+    /// Number of lines in the old file
+    pub old_lines: usize,
+    /// Start line in the new file
+    pub new_start: usize,
+    /// Number of lines in the new file
+    pub new_lines: usize,
+    /// List of changes in the hunk
+    pub lines: Vec<LineChange>,
 }
 
+/// A single line change in a hunk
 pub struct LineChange {
-    pub origin: char,    // '-', '+', or ' ' (context)
-    pub content: String, // The content of the line
+    /// '-', '+', or ' ' (context)
+    pub origin: char,
+    // The content of the line
+    pub content: String,
 }
 
 impl Display for DiffItem {

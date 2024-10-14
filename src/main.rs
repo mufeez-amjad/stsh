@@ -2,10 +2,8 @@ mod git;
 mod tui;
 
 use clap::{Parser, Subcommand};
-use ratatui::backend::Backend;
 use ratatui::prelude::Widget;
 use std::error::Error;
-use std::io::Write;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -108,28 +106,34 @@ impl App {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let cli = Cli::parse();
+    let mut root_dir = std::env::current_dir()?;
+    while !root_dir.join(".git").exists() {
+        root_dir = root_dir.parent().unwrap().to_path_buf();
+    }
 
-    let mut app = App { should_quit: false };
+    let repo = git::repo::Repository::new(root_dir);
+    let stashes = repo.stashes()?;
 
-    let rt = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()?;
+    for stash in stashes {
+        println!("{}", stash.message);
+        let diff = repo.stash_diff(&stash)?;
+        for diff_item in diff {
+            println!("{}", diff_item);
+        }
+    }
 
-    rt.block_on(app.run())?;
+    // let cli = Cli::parse();
+
+    // let mut app = App { should_quit: false };
+
+    // let rt = tokio::runtime::Builder::new_multi_thread()
+    //     .enable_all()
+    //     .build()?;
+
+    // rt.block_on(app.run())?;
 
     // match &cli.command {
-    //     Some(Commands::Show) => {
-    //         let repo = git::repo::Repository::new(std::env::current_dir()?);
-    //
-    //         let stashes = repo.stashes()?;
-    //         for stash in stashes {
-    //             println!("{}", stash.message);
-    //             for diff in stash.diffs {
-    //                 println!("{}", diff);
-    //             }
-    //         }
-    //     }
+    //     Some(Commands::Show) => {}
     //     None => {
     //         println!("Default subcommand");
     //     }
