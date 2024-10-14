@@ -20,14 +20,13 @@ enum Commands {
     Show,
 }
 
+#[derive(Debug)]
 struct App {
     should_quit: bool,
 }
 
 impl App {
     fn ui(&self, f: &mut ratatui::Frame) {
-        let size = f.size();
-
         ratatui::widgets::Block::default()
             .title("Block")
             .borders(ratatui::widgets::Borders::ALL)
@@ -52,9 +51,14 @@ impl App {
             .render(f.size(), f.buffer_mut());
     }
 
+    #[tui::tracing::instrument]
     fn handle_event(&mut self, evt: tui::Event) -> Option<String> {
         match evt {
-            tui::Event::Key(key) => None,
+            tui::Event::Key(key) => {
+                tui::tracing::info!("Key event: {:?}", key);
+                None
+            }
+            tui::Event::Quit => "quit".to_owned().into(),
             _ => None,
         }
     }
@@ -96,6 +100,7 @@ impl App {
             }
         }
 
+        tui::tracing::info!("Exiting");
         tui.exit().map_err(|e| anyhow::anyhow!(e))?; // Exits alternate screen, exits raw mode
 
         Ok(())

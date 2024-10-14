@@ -1,27 +1,27 @@
+pub mod tracing;
+
 use std::{
     ops::{Deref, DerefMut},
     time::Duration,
 };
 
-use anyhow::{anyhow, Context, Result};
-use signal_hook::consts::{SIGHUP, SIGINT, SIGQUIT, SIGTERM};
-use signal_hook_tokio::Signals;
-
+use color_eyre::Result;
 use crossterm::{
     cursor,
     event::{
         DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
-        Event as CrosstermEvent, KeyEvent, KeyEventKind, MouseEvent,
+        Event as CrosstermEvent, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseEvent,
     },
     terminal::{EnterAlternateScreen, LeaveAlternateScreen},
 };
 use futures::{FutureExt, StreamExt};
 use ratatui::backend::CrosstermBackend as Backend;
-use tokio::{
-    sync::mpsc,
-    task::{JoinHandle as TokioJoinHandle},
-};
+use signal_hook::consts::{SIGHUP, SIGINT, SIGQUIT, SIGTERM};
+use signal_hook_tokio::Signals;
+use tokio::{sync::mpsc, task::JoinHandle as TokioJoinHandle};
 use tokio_util::sync::CancellationToken;
+
+use tracing_appender::non_blocking::WorkerGuard;
 
 #[derive(Clone, Debug)]
 #[allow(unused)]
@@ -42,17 +42,19 @@ pub enum Event {
 
 pub struct Tui {
     /// The terminal instance.
-    pub terminal: ratatui::Terminal<Backend<std::io::Stderr>>,
+    terminal: ratatui::Terminal<Backend<std::io::Stderr>>,
     /// The event handler.
-    pub event_handler: EventHandler,
+    event_handler: EventHandler,
     /// The frame rate.
-    pub frame_rate: f64,
+    frame_rate: f64,
     /// The tick rate.
-    pub tick_rate: f64,
+    tick_rate: f64,
     /// Whether to enable mouse capture.
-    pub mouse: bool,
+    mouse: bool,
     /// Whether to enable bracketed paste.
-    pub paste: bool,
+    paste: bool,
+    /// The tracing guard.
+    _guard: Option<WorkerGuard>,
 }
 
 impl Tui {
@@ -65,6 +67,8 @@ impl Tui {
         let mouse = false;
         let paste = false;
 
+        let _guard = tracing::init_tracing().ok();
+
         Ok(Self {
             terminal,
             event_handler,
@@ -72,6 +76,7 @@ impl Tui {
             tick_rate,
             mouse,
             paste,
+            _guard,
         })
     }
 
@@ -85,21 +90,26 @@ impl Tui {
         self
     }
 
+    #[allow(unused)]
     pub fn mouse(mut self, mouse: bool) -> Self {
         self.mouse = mouse;
         self
     }
 
+    #[allow(unused)]
     pub fn paste(mut self, paste: bool) -> Self {
         self.paste = paste;
         self
     }
 
     pub fn start(&mut self) {
+        tracing::info!("Starting TUI");
+        self.event_handler.cancel();
         self.event_handler.start(self.tick_rate, self.frame_rate);
     }
 
     pub fn stop(&self) -> Result<()> {
+        tracing::info!("Stopping TUI");
         self.cancel();
         let mut counter = 0;
         while !self.event_handler.is_finished() {
@@ -131,6 +141,7 @@ impl Tui {
 
     pub fn exit(&mut self) -> Result<()> {
         self.stop()?;
+
         if crossterm::terminal::is_raw_mode_enabled()? {
             self.flush()?;
             if self.paste {
@@ -142,6 +153,7 @@ impl Tui {
             crossterm::execute!(std::io::stderr(), LeaveAlternateScreen, cursor::Show)?;
             crossterm::terminal::disable_raw_mode()?;
         }
+
         Ok(())
     }
 
@@ -149,6 +161,7 @@ impl Tui {
         self.event_handler.cancel();
     }
 
+    #[allow(unused)]
     pub fn suspend(&mut self) -> Result<()> {
         self.exit()?;
         #[cfg(not(windows))]
@@ -156,6 +169,7 @@ impl Tui {
         Ok(())
     }
 
+    #[allow(unused)]
     pub fn resume(&mut self) -> Result<()> {
         self.enter()?;
         Ok(())
@@ -187,6 +201,7 @@ impl Drop for Tui {
 }
 
 #[derive(Debug)]
+/// An event handler for the TUI.
 pub struct EventHandler {
     sender: mpsc::UnboundedSender<Event>,
     receiver: mpsc::UnboundedReceiver<Event>,
@@ -207,6 +222,7 @@ impl EventHandler {
         }
     }
 
+    /// Start the event handler task.
     pub fn start(&mut self, tick_rate: f64, frame_rate: f64) {
         let tick_delay = std::time::Duration::from_secs_f64(1.0 / tick_rate);
         let render_delay = std::time::Duration::from_secs_f64(1.0 / frame_rate);
@@ -227,7 +243,7 @@ impl EventHandler {
                 let tick_delay = tick_interval.tick();
                 let render_delay = render_interval.tick();
 
-                let mut signals = Signals::new(&[SIGHUP, SIGTERM, SIGINT, SIGQUIT]).unwrap();
+                let mut signals = Signals::new([SIGHUP, SIGTERM, SIGINT, SIGQUIT]).unwrap();
 
                 let crossterm_event = reader.next().fuse();
                 tokio::select! {
@@ -240,6 +256,11 @@ impl EventHandler {
                                 match evt {
                                     CrosstermEvent::Key(key) => {
                                         if key.kind == KeyEventKind::Press {
+                                            if Self::is_ctrl_c(&key) {
+                                                _sender.send(Event::Quit).unwrap();
+                                                break;
+                                            }
+
                                             _sender.send(Event::Key(key)).unwrap();
                                         }
                                     },
@@ -275,6 +296,7 @@ impl EventHandler {
                     maybe_signal = signals.next() => {
                         match maybe_signal {
                             Some(SIGTERM) | Some(SIGINT) | Some(SIGQUIT) | Some(SIGHUP) => {
+                                tracing::info!("Received signal: {:?}", maybe_signal);
                                 _sender.send(Event::Quit).unwrap();
                             },
                             _ => unreachable!(),
@@ -285,14 +307,17 @@ impl EventHandler {
         }));
     }
 
+    /// Get the next event from the receiver.
     pub async fn next(&mut self) -> Option<Event> {
         self.receiver.recv().await
     }
 
+    /// Cancel the event handler task.
     pub fn cancel(&self) {
         self.cancellation_token.cancel();
     }
 
+    /// Check if the event handler task is finished.
     pub fn is_finished(&self) -> bool {
         match self.task {
             Some(ref task) => task.is_finished(),
@@ -300,9 +325,16 @@ impl EventHandler {
         }
     }
 
+    /// Abort the event handler task.
     pub fn abort(&self) {
         if let Some(ref task) = self.task {
             task.abort();
         }
     }
+
+    /// Check if the key event is a Ctrl-C event.
+    fn is_ctrl_c(key: &KeyEvent) -> bool {
+        key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL)
+    }
 }
+

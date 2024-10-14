@@ -1,0 +1,5 @@
+[2m2024-10-13T22:17:48.709182Z[0m [32m INFO[0m [2mstsh::tui[0m[2m:[0m Starting TUI
+[2m2024-10-13T22:18:46.863092Z[0m [32m INFO[0m [2mstsh::tui[0m[2m:[0m Received signal: Some(2)
+[2m2024-10-13T22:18:46.863365Z[0m [32m INFO[0m [2mstsh[0m[2m:[0m Exiting
+[2m2024-10-13T22:18:46.863387Z[0m [32m INFO[0m [2mstsh::tui[0m[2m:[0m Stopping TUI
+[2m2024-10-13T22:18:46.873894Z[0m [32m INFO[0m [2mstsh::tui[0m[2m:[0m Stopping TUI
